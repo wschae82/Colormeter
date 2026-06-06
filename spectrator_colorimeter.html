@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Spectrator ColorMeter</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; background: #111; color: #fff; font-family: -apple-system, 'Noto Sans KR', sans-serif; overflow-x: hidden; }
+
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; background: #1a1a1a; border-bottom: 0.5px solid #333;
+  position: sticky; top: 0; z-index: 10;
+}
+#topbar .title { font-size: 13px; font-weight: 500; letter-spacing: 0.08em; color: #aaa; }
+#topbar .meta { font-size: 10px; color: #666; text-align: right; line-height: 1.6; }
+
+#cam-wrap {
+  position: relative; width: 100%; height: 260px;
+  background: #000; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+#video { width: 100%; height: 260px; object-fit: cover; display: block; }
+#snap-canvas { display: none; position: absolute; inset: 0; width: 100%; height: 260px; object-fit: cover; }
+
+#roi-dot {
+  position: absolute; width: 48px; height: 48px;
+  transform: translate(-50%, -50%); pointer-events: none;
+}
+#roi-dot::before, #roi-dot::after { content: ''; position: absolute; background: rgba(255,255,255,0.9); }
+#roi-dot::before { width: 1px; height: 100%; left: 50%; top: 0; }
+#roi-dot::after  { width: 100%; height: 1px; top: 50%; left: 0; }
+.roi-ring {
+  position: absolute; width: 28px; height: 28px;
+  border: 1.5px solid rgba(255,255,255,0.9); border-radius: 50%;
+  left: 50%; top: 50%; transform: translate(-50%,-50%);
+}
+
+#rgb-live {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(0,0,0,0.72); border-radius: 8px;
+  padding: 7px 11px; font-size: 12px; line-height: 2;
+  border: 0.5px solid #333;
+}
+.rgb-r { color: #ff6b6b; } .rgb-g { color: #69db7c; } .rgb-b { color: #74c0fc; }
+.rgb-hex { color: #888; font-size: 11px; }
+
+#frozen-banner {
+  display: none; position: absolute; bottom: 10px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(250,176,5,0.88); color: #000;
+  font-size: 11px; font-weight: 600; padding: 4px 14px; border-radius: 20px;
+}
+
+#controls { background: #1a1a1a; padding: 10px 12px; }
+
+.section-label { font-size: 10px; color: #555; margin-bottom: 6px; letter-spacing: 0.06em; }
+
+.roi-pad {
+  display: grid; grid-template-columns: repeat(3,40px);
+  grid-template-rows: repeat(3,40px); gap: 4px;
+  justify-content: center; margin-bottom: 10px;
+}
+.roi-pad button {
+  width: 40px; height: 40px; background: #252525;
+  border: 0.5px solid #3a3a3a; border-radius: 8px;
+  color: #ccc; font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation;
+}
+.roi-pad button:active { background: #3a3a3a; }
+.roi-pad .center-lbl { display: flex; align-items: center; justify-content: center; font-size: 9px; color: #444; }
+.roi-reset-btn {
+  font-size: 11px; padding: 6px 12px; border-radius: 8px;
+  border: 0.5px solid #3a3a3a; background: #222; color: #777; cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn-row { display: flex; gap: 7px; margin-bottom: 10px; }
+.btn-action {
+  flex: 1; padding: 10px 4px; border-radius: 10px;
+  border: 0.5px solid #3a3a3a; background: #252525;
+  color: #ccc; font-size: 11px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  touch-action: manipulation;
+}
+.btn-action i { font-size: 20px; }
+.btn-action:active { background: #333; }
+.btn-shoot  { border-color: #74c0fc; color: #74c0fc; }
+.btn-freeze { border-color: #fab005; color: #fab005; }
+.btn-save   { border-color: #69db7c; color: #69db7c; }
+.btn-cancel { border-color: #ff6b6b; color: #ff6b6b; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.tab {
+  flex: 1; padding: 8px; text-align: center; font-size: 12px;
+  border-radius: 8px; border: 0.5px solid #333;
+  background: #1e1e1e; color: #666; cursor: pointer;
+  touch-action: manipulation;
+}
+.tab.active { background: #2a2a2a; color: #ddd; border-color: #555; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+#log-list { max-height: 200px; overflow-y: auto; margin-bottom: 8px; }
+.log-item {
+  display: grid; grid-template-columns: auto 1fr auto;
+  gap: 8px; padding: 8px 0; border-bottom: 0.5px solid #222;
+  align-items: center;
+}
+.log-item:last-child { border-bottom: none; }
+.log-swatch { width: 20px; height: 20px; border-radius: 4px; flex-shrink: 0; }
+.log-rgb { font-size: 11px; color: #aaa; line-height: 1.6; }
+.log-meta { font-size: 10px; color: #555; text-align: right; line-height: 1.6; }
+.log-empty { color: #444; text-align: center; padding: 24px 0; font-size: 13px; }
+
+.calib-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.calib-row label { font-size: 11px; color: #666; min-width: 56px; }
+.calib-row input, .calib-row select {
+  flex: 1; background: #222; border: 0.5px solid #3a3a3a;
+  border-radius: 8px; color: #ddd; font-size: 13px;
+  padding: 8px 10px; outline: none;
+}
+.btn-calc {
+  width: 100%; padding: 10px; border-radius: 10px;
+  border: 0.5px solid #74c0fc; background: #0d1f2d;
+  color: #74c0fc; font-size: 13px; cursor: pointer;
+  touch-action: manipulation; margin-bottom: 10px;
+}
+.btn-calc:active { background: #152d40; }
+.calib-result {
+  background: #1a2a1a; border: 0.5px solid #2d4a2d;
+  border-radius: 10px; padding: 14px; text-align: center; display: none;
+}
+.calib-result .label { font-size: 11px; color: #5a8a5a; margin-bottom: 4px; }
+.calib-result .value { font-size: 28px; font-weight: 500; color: #69db7c; }
+.calib-result .absval { font-size: 11px; color: #5a8a5a; margin-top: 4px; }
+
+.btn-export {
+  width: 100%; padding: 10px; border-radius: 10px;
+  border: 0.5px solid #3a3a3a; background: #222;
+  color: #aaa; font-size: 12px; cursor: pointer;
+  touch-action: manipulation; margin-top: 4px;
+}
+.btn-export:active { background: #2a2a2a; }
+
+#statusbar {
+  padding: 6px 12px; font-size: 10px; color: #555;
+  background: #111; border-top: 0.5px solid #222;
+  display: flex; justify-content: space-between;
+}
+
+.toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(40,40,40,0.95); color: #ddd;
+  padding: 8px 18px; border-radius: 20px; font-size: 12px;
+  border: 0.5px solid #444; z-index: 999;
+  opacity: 0; transition: opacity 0.2s;
+  pointer-events: none; white-space: nowrap;
+}
+.toast.show { opacity: 1; }
+
+/* 화면 항상 켜짐 방지용 */
+#wakelock-status { font-size: 9px; color: #444; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="title">SPECTRATOR · ColorMeter</span>
+  <div>
+    <div class="meta" id="meta-dt">-- -- --</div>
+    <div class="meta" id="meta-gps">GPS: --</div>
+  </div>
+</div>
+
+<div id="cam-wrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="snap-canvas"></canvas>
+  <div id="roi-dot"><div class="roi-ring"></div></div>
+  <div id="rgb-live">
+    <div class="rgb-r">R: <b id="lv-r">---</b></div>
+    <div class="rgb-g">G: <b id="lv-g">---</b></div>
+    <div class="rgb-b">B: <b id="lv-b">---</b></div>
+    <div class="rgb-hex" id="lv-hex">#------</div>
+  </div>
+  <div id="frozen-banner">📷 촬영됨 — 저장 버튼을 누르세요</div>
+</div>
+
+<div id="controls">
+
+  <!-- ROI 이동 -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+    <div>
+      <div class="section-label">ROI 위치 조정</div>
+      <div class="roi-pad">
+        <div></div>
+        <button onclick="moveROI(0,-6)"><i class="ti ti-chevron-up"></i></button>
+        <div></div>
+        <button onclick="moveROI(-6,0)"><i class="ti ti-chevron-left"></i></button>
+        <div class="center-lbl">ROI</div>
+        <button onclick="moveROI(6,0)"><i class="ti ti-chevron-right"></i></button>
+        <div></div>
+        <button onclick="moveROI(0,6)"><i class="ti ti-chevron-down"></i></button>
+        <div></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;">
+      <button class="roi-reset-btn" onclick="resetROI()">중앙 초기화</button>
+      <div style="font-size:10px;color:#555;">위치 자동저장</div>
+      <div id="wakelock-status"></div>
+    </div>
+  </div>
+
+  <!-- 촬영 버튼 -->
+  <div class="btn-row">
+    <button class="btn-action btn-shoot" onclick="shootFrame()">
+      <i class="ti ti-camera" aria-hidden="true"></i>
+      <span>촬영</span>
+    </button>
+    <button class="btn-action btn-freeze" id="btn-freeze" onclick="toggleFreeze()">
+      <i class="ti ti-player-pause" aria-hidden="true"></i>
+      <span id="freeze-lbl">정지</span>
+    </button>
+    <button class="btn-action btn-save" onclick="saveReading()">
+      <i class="ti ti-device-floppy" aria-hidden="true"></i>
+      <span>저장</span>
+    </button>
+    <button class="btn-action btn-cancel" onclick="cancelLast()">
+      <i class="ti ti-trash" aria-hidden="true"></i>
+      <span>취소</span>
+    </button>
+  </div>
+
+  <!-- 탭 -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('log')">📋 측정 기록</div>
+    <div class="tab" onclick="showTab('calib')">📈 검정곡선</div>
+  </div>
+
+  <!-- 측정 기록 패널 -->
+  <div class="panel active" id="panel-log">
+    <div id="log-list"><div class="log-empty">저장된 측정값이 없습니다</div></div>
+    <button class="btn-export" onclick="exportCSV()">
+      <i class="ti ti-download" aria-hidden="true"></i> CSV 내보내기 (Google Drive / 공유)
+    </button>
+  </div>
+
+  <!-- 검정곡선 패널 -->
+  <div class="panel" id="panel-calib">
+    <div class="calib-row">
+      <label>측정 채널</label>
+      <select id="calib-ch">
+        <option value="R">R 채널 (적색 흡수)</option>
+        <option value="G">G 채널 (녹색 흡수)</option>
+        <option value="B" selected>B 채널 (청색 흡수, NO₃-N)</option>
+      </select>
+    </div>
+    <div class="calib-row">
+      <label>기울기 a</label>
+      <input type="number" id="calib-a" placeholder="예: 0.121" step="0.001" inputmode="decimal">
+    </div>
+    <div class="calib-row">
+      <label>절편 b</label>
+      <input type="number" id="calib-b" placeholder="예: -0.036" step="0.001" inputmode="decimal">
+    </div>
+    <div style="font-size:10px;color:#555;margin-bottom:10px;padding-left:64px;">
+      A = −log₁₀(채널값 / 255) &nbsp;|&nbsp; C = (A − b) / a
+    </div>
+    <button class="btn-calc" onclick="calcConc()">
+      <i class="ti ti-calculator" aria-hidden="true"></i> 농도 계산
+    </button>
+    <div class="calib-result" id="calib-result">
+      <div class="label">추정 농도 (NO₃-N)</div>
+      <div class="value" id="conc-val">-- mg/L</div>
+      <div class="absval" id="abs-val">흡광도 A = --</div>
+    </div>
+  </div>
+
+</div>
+
+<div id="statusbar">
+  <span id="sb-cam">카메라 초기화 중...</span>
+  <span id="sb-count">저장: 0건</span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const video       = document.getElementById('video');
+const snapCanvas  = document.getElementById('snap-canvas');
+const snapCtx     = snapCanvas.getContext('2d');
+const roiDot      = document.getElementById('roi-dot');
+const camWrap     = document.getElementById('cam-wrap');
+const frozenBanner= document.getElementById('frozen-banner');
+
+let roiX = 50, roiY = 50;
+let frozen = false;
+let lastRGB = null;
+let readings = [];
+let gpsStr = '위치 수신 중...';
+let stream = null;
+let liveTimer = null;
+let offscreen = document.createElement('canvas');
+let octx = offscreen.getContext('2d');
+
+// ── 토스트 메시지 ──
+function showToast(msg, dur=1800) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// ── Hex 변환 ──
+function toHex(r,g,b){
+  return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+// ── ROI 위치 ──
+function positionROI() {
+  roiDot.style.left = roiX + '%';
+  roiDot.style.top  = roiY + '%';
+  try { localStorage.setItem('spc_roi', JSON.stringify({x:roiX,y:roiY})); } catch(e){}
+}
+function moveROI(dx, dy) {
+  roiX = Math.min(95, Math.max(5, roiX + dx));
+  roiY = Math.min(95, Math.max(5, roiY + dy));
+  positionROI();
+}
+function resetROI() { roiX=50; roiY=50; positionROI(); showToast('ROI 중앙으로 초기화'); }
+
+// ── ROI에서 RGB 읽기 (12px 반경 평균) ──
+function getRGBatROI(src) {
+  const W = src.width || 320, H = src.height || 240;
+  const px = Math.round(roiX/100*W);
+  const py = Math.round(roiY/100*H);
+  const r  = 12;
+  const x0 = Math.max(0,px-r), y0 = Math.max(0,py-r);
+  const w  = Math.min(r*2, W-x0), h = Math.min(r*2, H-y0);
+  let ctx;
+  if(src === offscreen) ctx = octx;
+  else { ctx = src.getContext('2d'); }
+  const d = ctx.getImageData(x0,y0,w,h).data;
+  let sr=0,sg=0,sb=0,n=0;
+  for(let i=0;i<d.length;i+=4){sr+=d[i];sg+=d[i+1];sb+=d[i+2];n++;}
+  return {r:Math.round(sr/n),g:Math.round(sg/n),b:Math.round(sb/n)};
+}
+
+// ── 실시간 표시 업데이트 ──
+function updateLiveDisplay(rgb) {
+  document.getElementById('lv-r').textContent = rgb.r;
+  document.getElementById('lv-g').textContent = rgb.g;
+  document.getElementById('lv-b').textContent = rgb.b;
+  document.getElementById('lv-hex').textContent = toHex(rgb.r,rgb.g,rgb.b);
+}
+
+function startLive() {
+  liveTimer = setInterval(() => {
+    if (frozen || !stream) return;
+    try {
+      offscreen.width  = video.videoWidth  || 320;
+      offscreen.height = video.videoHeight || 240;
+      octx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+      const rgb = getRGBatROI(offscreen);
+      lastRGB = rgb;
+      updateLiveDisplay(rgb);
+    } catch(e){}
+  }, 250);
+}
+
+// ── 촬영 (프레임 캡처) ──
+function shootFrame() {
+  if (!stream) { showToast('카메라가 연결되지 않았습니다'); return; }
+  snapCanvas.width  = video.videoWidth  || 320;
+  snapCanvas.height = video.videoHeight || 240;
+  snapCtx.drawImage(video, 0, 0, snapCanvas.width, snapCanvas.height);
+  const rgb = getRGBatROI(snapCanvas);
+  lastRGB = rgb;
+  updateLiveDisplay(rgb);
+  frozen = true;
+  snapCanvas.style.display = 'block';
+  video.style.display = 'none';
+  frozenBanner.style.display = 'block';
+  showToast('촬영 완료 — R:'+rgb.r+' G:'+rgb.g+' B:'+rgb.b);
+}
+
+// ── 정지 / 재개 ──
+function toggleFreeze() {
+  if (!frozen) {
+    frozen = true;
+    document.getElementById('freeze-lbl').textContent = '재개';
+  } else {
+    resumeCamera();
+  }
+}
+function resumeCamera() {
+  frozen = false;
+  snapCanvas.style.display = 'none';
+  video.style.display = 'block';
+  frozenBanner.style.display = 'none';
+  document.getElementById('freeze-lbl').textContent = '정지';
+}
+
+// ── 저장 ──
+function saveReading() {
+  if (!lastRGB) { showToast('먼저 촬영하세요'); return; }
+  const now = new Date();
+  const entry = {
+    idx   : readings.length + 1,
+    date  : now.toLocaleDateString('ko-KR'),
+    time  : now.toLocaleTimeString('ko-KR'),
+    gps   : gpsStr,
+    r: lastRGB.r, g: lastRGB.g, b: lastRGB.b,
+    hex   : toHex(lastRGB.r, lastRGB.g, lastRGB.b)
+  };
+  readings.push(entry);
+  try { localStorage.setItem('spc_readings', JSON.stringify(readings)); } catch(e){}
+  renderLog();
+  document.getElementById('sb-count').textContent = '저장: ' + readings.length + '건';
+  resumeCamera();
+  showToast('#' + readings.length + ' 저장 완료');
+}
+
+// ── 마지막 취소 ──
+function cancelLast() {
+  if (readings.length === 0) { showToast('삭제할 데이터가 없습니다'); return; }
+  readings.pop();
+  try { localStorage.setItem('spc_readings', JSON.stringify(readings)); } catch(e){}
+  renderLog();
+  document.getElementById('sb-count').textContent = '저장: ' + readings.length + '건';
+  resumeCamera();
+  showToast('마지막 항목 삭제');
+}
+
+// ── 기록 렌더링 ──
+function renderLog() {
+  const el = document.getElementById('log-list');
+  if (readings.length === 0) {
+    el.innerHTML = '<div class="log-empty">저장된 측정값이 없습니다</div>';
+    return;
+  }
+  el.innerHTML = readings.slice().reverse().map(e => `
+    <div class="log-item">
+      <div class="log-swatch" style="background:${e.hex}"></div>
+      <div class="log-rgb">
+        <b style="color:#ddd;">#${e.idx} &nbsp;${e.hex}</b><br>
+        R:${e.r} &nbsp;G:${e.g} &nbsp;B:${e.b}
+      </div>
+      <div class="log-meta">${e.date}<br>${e.time}</div>
+    </div>
+  `).join('');
+}
+
+// ── CSV 내보내기 ──
+function exportCSV() {
+  if (readings.length === 0) { showToast('저장된 데이터가 없습니다'); return; }
+  const hdr = '번호,날짜,시간,GPS,R,G,B,HEX\n';
+  const rows = readings.map(e =>
+    `${e.idx},"${e.date}","${e.time}","${e.gps}",${e.r},${e.g},${e.b},${e.hex}`
+  ).join('\n');
+  const blob = new Blob(['\uFEFF' + hdr + rows], {type:'text/csv;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = 'spectrator_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('CSV 저장 완료');
+}
+
+// ── 농도 계산 ──
+function calcConc() {
+  if (!lastRGB) { showToast('먼저 촬영하세요'); return; }
+  const ch = document.getElementById('calib-ch').value;
+  const a  = parseFloat(document.getElementById('calib-a').value);
+  const b  = parseFloat(document.getElementById('calib-b').value);
+  if (isNaN(a) || isNaN(b) || a === 0) { showToast('기울기와 절편을 입력하세요'); return; }
+  const raw = ch==='R' ? lastRGB.r : ch==='G' ? lastRGB.g : lastRGB.b;
+  const A   = raw > 0 ? -Math.log10(raw / 255) : 0;
+  const C   = (A - b) / a;
+  const res = document.getElementById('calib-result');
+  res.style.display = 'block';
+  document.getElementById('conc-val').textContent = (C < 0 ? 0 : C).toFixed(3) + ' mg/L';
+  document.getElementById('abs-val').textContent  = '흡광도 A = ' + A.toFixed(4) + '  (' + ch + '=' + raw + ')';
+}
+
+// ── 탭 전환 ──
+function showTab(name) {
+  const names = ['log','calib'];
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', names[i]===name));
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('active', names[i]===name));
+}
+
+// ── 날짜/시간 업데이트 ──
+function updateDT() {
+  const now = new Date();
+  document.getElementById('meta-dt').textContent =
+    now.toLocaleDateString('ko-KR') + ' ' + now.toLocaleTimeString('ko-KR');
+}
+
+// ── GPS ──
+function initGPS() {
+  if (!navigator.geolocation) { gpsStr='GPS 미지원'; return; }
+  navigator.geolocation.watchPosition(
+    pos => {
+      gpsStr = pos.coords.latitude.toFixed(5) + '°N, ' + pos.coords.longitude.toFixed(5) + '°E';
+      document.getElementById('meta-gps').textContent = 'GPS: ' + gpsStr;
+    },
+    () => { gpsStr='위치 거부됨'; document.getElementById('meta-gps').textContent='GPS: 거부됨'; },
+    { enableHighAccuracy: true }
+  );
+}
+
+// ── 카메라 초기화 ──
+function initCamera() {
+  const constraints = {
+    video: {
+      facingMode: { ideal: 'environment' },
+      width:  { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  };
+  navigator.mediaDevices.getUserMedia(constraints)
+    .then(s => {
+      stream = s;
+      video.srcObject = s;
+      video.play();
+      document.getElementById('sb-cam').textContent = '카메라 연결됨 ✓';
+      startLive();
+    })
+    .catch(e => {
+      document.getElementById('sb-cam').textContent = '카메라 오류: ' + e.message;
+      showToast('카메라를 사용할 수 없습니다', 3000);
+    });
+}
+
+// ── WakeLock (화면 꺼짐 방지) ──
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      await navigator.wakeLock.request('screen');
+      document.getElementById('wakelock-status').textContent = '화면 유지 ON';
+    } catch(e) {}
+  }
+}
+
+// ── 로컬 스토리지에서 복원 ──
+function restoreState() {
+  try {
+    const roi = JSON.parse(localStorage.getItem('spc_roi'));
+    if (roi) { roiX=roi.x; roiY=roi.y; }
+    const saved = JSON.parse(localStorage.getItem('spc_readings'));
+    if (saved && Array.isArray(saved)) { readings = saved; renderLog(); }
+    document.getElementById('sb-count').textContent = '저장: ' + readings.length + '건';
+  } catch(e){}
+}
+
+// ── 초기화 ──
+(function init() {
+  restoreState();
+  positionROI();
+  initGPS();
+  initCamera();
+  requestWakeLock();
+  setInterval(updateDT, 1000);
+  updateDT();
+})();
+</script>
+</body>
+</html>
